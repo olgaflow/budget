@@ -91,6 +91,12 @@ class Entry {
       );
 }
 
+class _ImportResult {
+  final bool success;
+  final String message;
+  _ImportResult(this.success, this.message);
+}
+
 class MonthData {
   List<Entry> entries;
   double carryOver;
@@ -660,6 +666,175 @@ class _HomePageState extends State<HomePage> {
     return const JsonEncoder.withIndent('  ').convert(data);
   }
 
+  void _showImportDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.file_upload_outlined, color: Color(0xFF1A73E8)),
+            SizedBox(width: 8),
+            Flexible(child: Text('Importer un CSV', overflow: TextOverflow.ellipsis)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '📋 Comment faire :\n'
+                '1. Uber Driver → Paiements → Historique\n'
+                '2. Exporter en CSV\n'
+                '3. Ouvrir le fichier, copier le contenu\n'
+                '4. Coller ci-dessous',
+                style: TextStyle(fontSize: 12, color: Color(0xFF374151)),
+                softWrap: true,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFBFDBFE), width: 1)),
+                child: const Text('💡 Formats supportés : date,montant ou date,type,montant', style: TextStyle(fontSize: 11, color: Color(0xFF1E40AF)), softWrap: true),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: 8,
+                decoration: InputDecoration(
+                  labelText: 'Contenu CSV',
+                  hintText: 'Coller ici...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          ElevatedButton.icon(
+            onPressed: () {
+              final result = _parseAndImportCsv(ctrl.text);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(result.message),
+                backgroundColor: result.success ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                duration: const Duration(seconds: 3),
+              ));
+            },
+            icon: const Icon(Icons.file_upload, size: 18),
+            label: const Text('Importer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _ImportResult _parseAndImportCsv(String text) {
+    if (text.trim().isEmpty) {
+      return _ImportResult(false, '❌ Aucun contenu collé');
+    }
+    final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    if (lines.length < 2) {
+      return _ImportResult(false, '❌ Pas assez de lignes (besoin au moins un en-tête + 1 ligne)');
+    }
+
+    int dateCol = -1;
+    int amountCol = -1;
+    int typeCol = -1;
+    int count = 0;
+
+    setState(() {
+      for (int i = 0; i < lines.length; i++) {
+        final cells = _splitCsvLine(lines[i]);
+        if (i == 0) {
+          for (int j = 0; j < cells.length; j++) {
+            final c = cells[j].toLowerCase();
+            if (dateCol == -1 && (c.contains('date') || c.contains('jour') || c == 'd')) dateCol = j;
+            if (amountCol == -1 && (c.contains('montant') || c.contains('amount') || c.contains('gain') || c.contains('prix') || c.contains('euros') || c.contains('€'))) amountCol = j;
+            if (typeCol == -1 && (c.contains('type') || c.contains('catégorie'))) typeCol = j;
+          }
+          if (dateCol == -1) dateCol = 0;
+          if (amountCol == -1) amountCol = cells.length > 1 ? 1 : 0;
+          continue;
+        }
+
+        try {
+          final dateStr = cells[dateCol].trim();
+          final amountStr = cells[amountCol].trim().replaceAll('€', '').replaceAll(' ', '').replaceAll(',', '.');
+          final amount = double.tryParse(amountStr);
+          if (amount == null || amount <= 0) continue;
+          final date = _parseDate(dateStr);
+          if (date == null) continue;
+
+          final type = typeCol >= 0 && typeCol < cells.length ? cells[typeCol].toLowerCase() : '';
+          final isExpense = type.contains('frais') || type.contains('débit') || type.contains('commission') || amountStr.startsWith('-');
+          final source = isExpense ? 'autre' : 'livraison';
+          final cleanAmount = amount.abs();
+
+          final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+          _months[monthKey] ??= MonthData();
+          _months[monthKey]!.entries.add(Entry(
+            id: 'csv-${DateTime.now().millisecondsSinceEpoch}-$i',
+            type: isExpense ? 'expense' : 'income',
+            label: isExpense ? '💸 Frais Uber' : '🚚 Course Uber',
+            amount: cleanAmount,
+            taxable: !isExpense,
+            source: isExpense ? 'autre' : source,
+            nonEssential: false,
+            date: date,
+          ));
+          count++;
+        } catch (_) {
+          continue;
+        }
+      }
+    });
+    _saveState();
+    if (count == 0) {
+      return _ImportResult(false, '❌ Aucune ligne valide trouvée. Vérifie le format.');
+    }
+    return _ImportResult(true, '✅ $count opérations importées !');
+  }
+
+  DateTime? _parseDate(String s) {
+    s = s.trim();
+    final formats = ['yyyy-MM-dd', 'dd/MM/yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy', 'yyyy/MM/dd'];
+    for (final f in formats) {
+      try {
+        return DateFormat(f).parseStrict(s);
+      } catch (_) {
+        continue;
+      }
+    }
+    try {
+      return DateTime.parse(s);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<String> _splitCsvLine(String line) {
+    final result = <String>[];
+    final buffer = StringBuffer();
+    bool inQuotes = false;
+    for (int i = 0; i < line.length; i++) {
+      final c = line[i];
+      if (c == '"') {
+        inQuotes = !inQuotes;
+      } else if (c == ',' && !inQuotes) {
+        result.add(buffer.toString());
+        buffer.clear();
+      } else {
+        buffer.write(c);
+      }
+    }
+    result.add(buffer.toString());
+    return result;
+  }
+
   void _showHelpDialog() {
     showDialog(
       context: context,
@@ -1220,6 +1395,11 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.science_outlined),
             onPressed: _showDemoDialog,
             tooltip: 'Charger démo',
+          ),
+          IconButton(
+            icon: const Icon(Icons.file_upload_outlined),
+            onPressed: _showImportDialog,
+            tooltip: 'Importer CSV',
           ),
           IconButton(
             icon: const Icon(Icons.backup_outlined),
