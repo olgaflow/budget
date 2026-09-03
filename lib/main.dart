@@ -19,7 +19,7 @@ class BudgetLivreurApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Budget Livreur',
+      title: 'Carnet Livreur',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A73E8)),
@@ -524,6 +524,141 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showDemoDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.science_outlined, color: Color(0xFF1A73E8)),
+            SizedBox(width: 8),
+            Flexible(child: Text('Charger données démo', overflow: TextOverflow.ellipsis)),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Cela va remplacer vos données actuelles par un exemple clair :\n\n'
+            '• Factures à payer : 800 €\n'
+            '• Aides (APL) : 200 €\n'
+            '• URSSAF : 22%\n'
+            '• CA Uber semaine : 350 €\n'
+            '• Carburant payé : 50 €\n'
+            '• 1 facture payée (EDF) : 60 €\n'
+            '• 1 facture en attente (Loyer) : 700 €\n\n'
+            'Objectif CA attendu : (800-200) ÷ 0.78 = 769 €',
+            softWrap: true,
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _loadDemoData();
+            },
+            child: const Text('Charger'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _loadDemoData() {
+    final now = DateTime.now();
+    final monthKey = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final lastWeek = now.subtract(const Duration(days: 3));
+    final twoWeeksAgo = now.subtract(const Duration(days: 10));
+
+    setState(() {
+      _objectives = {
+        'perso': 250,
+        'fixes': 800,
+        'epargne': 50,
+        'urssaf': 22,
+        'aides': 200,
+      };
+      _transferType = 'weekly';
+      _months = {
+        monthKey: MonthData(
+          entries: [
+            Entry(id: 'demo-1', type: 'income', label: '🚚 Uber lundi', amount: 120, taxable: true, source: 'livraison', date: twoWeeksAgo),
+            Entry(id: 'demo-2', type: 'income', label: '🚚 Uber mardi', amount: 85, taxable: true, source: 'livraison', date: twoWeeksAgo.add(const Duration(days: 1))),
+            Entry(id: 'demo-3', type: 'income', label: '🚚 Uber mercredi', amount: 145, taxable: true, source: 'livraison', date: lastWeek),
+            Entry(id: 'demo-4', type: 'income', label: '💵 APL', amount: 200, taxable: false, source: 'autre', date: lastWeek),
+            Entry(id: 'demo-5', type: 'expense', label: '⛽ Carburant', amount: 50, nonEssential: false, isBill: false, date: lastWeek),
+            Entry(id: 'demo-6', type: 'expense', label: 'EDF', amount: 60, nonEssential: false, isBill: true, billRecurring: true, billPaid: true, date: now.subtract(const Duration(days: 5))),
+            Entry(id: 'demo-7', type: 'expense', label: 'Loyer', amount: 700, nonEssential: false, isBill: true, billRecurring: true, billPaid: false, date: now.subtract(const Duration(days: 2))),
+            Entry(id: 'demo-8', type: 'expense', label: 'Netflix', amount: 13, nonEssential: true, isBill: true, billRecurring: true, billPaid: false, date: now.subtract(const Duration(days: 1))),
+          ],
+        ),
+      };
+      _currentMonthKey = monthKey;
+    });
+    _saveState();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🧪 Démo chargée ! Objectif : 769 € Uber à gagner')));
+  }
+
+  void _showBackupDialog() {
+    final json = _exportJson();
+    final ctrl = TextEditingController(text: json);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.backup_outlined, color: Color(0xFF1A73E8)),
+            SizedBox(width: 8),
+            Flexible(child: Text('Sauvegarde', overflow: TextOverflow.ellipsis)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('📋 Copiez ce texte pour sauvegarder vos données (collez-le plus tard pour restaurer).', style: TextStyle(fontSize: 12, color: Color(0xFF374151)), softWrap: true),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SingleChildScrollView(
+                  child: SelectableText(json, style: const TextStyle(fontSize: 9, fontFamily: 'monospace')),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+          ElevatedButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: json));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📋 Sauvegarde copiée !')));
+              Navigator.pop(ctx);
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copier'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _exportJson() {
+    final monthsData = _months.map((key, month) => MapEntry(key, {
+          'entries': month.entries.map((e) => e.toJson()).toList(),
+          'carryOver': month.carryOver,
+        }));
+    final data = {
+      'objectives': _objectives,
+      'transferType': _transferType,
+      'currentMonthKey': _currentMonthKey,
+      'months': monthsData,
+    };
+    return const JsonEncoder.withIndent('  ').convert(data);
+  }
+
   void _showHelpDialog() {
     showDialog(
       context: context,
@@ -540,6 +675,14 @@ class _HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _helpSection(
+                '📒 C\'est un carnet de compte intelligent',
+                '• Pas une app bancaire (pas de connexion à votre banque)\n'
+                '• Vous notez vos revenus/dépenses vous-même\n'
+                '• L\'app calcule automatiquement où vous en êtes\n'
+                '• 100% privé : tout reste sur votre téléphone\n'
+                '• Pensez à faire une sauvegarde (💾) de temps en temps !',
+              ),
               _helpSection(
                 '📌 Étape 1 : Vos besoins',
                 'Entrez ce que vous devez gagner pour vivre :\n'
@@ -1024,7 +1167,21 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('💰 Budget Livreur'),
+        title: const Text('📒 Carnet de Compte'),
+        centerTitle: false,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(20),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 6),
+            child: Row(
+              children: [
+                const Text('🚚', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 4),
+                Text('Suivi intelligent pour livreurs', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.9))),
+              ],
+            ),
+          ),
+        ),
         backgroundColor: const Color(0xFF1A73E8),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -1057,6 +1214,16 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.assessment),
             onPressed: _showSummaryDialog,
             tooltip: 'Résumé',
+          ),
+          IconButton(
+            icon: const Icon(Icons.science_outlined),
+            onPressed: _showDemoDialog,
+            tooltip: 'Charger démo',
+          ),
+          IconButton(
+            icon: const Icon(Icons.backup_outlined),
+            onPressed: _showBackupDialog,
+            tooltip: 'Sauvegarder',
           ),
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -1128,7 +1295,153 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showQuickAdd,
+        backgroundColor: const Color(0xFF1A73E8),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.flash_on),
+        label: const Text('Saisie rapide'),
+      ),
     );
+  }
+
+  void _showQuickAdd() {
+    String source = 'livraison';
+    final amountCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+                ),
+                const SizedBox(height: 16),
+                const Text('⚡ Saisie rapide', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setSheet(() => source = 'livraison'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: source == 'livraison' ? const Color(0xFFE8F0FE) : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: source == 'livraison' ? const Color(0xFF1A73E8) : const Color(0xFFE5E7EB), width: source == 'livraison' ? 2 : 1),
+                          ),
+                          child: const Center(child: Text('🚚 Livraison', style: TextStyle(fontWeight: FontWeight.w600))),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setSheet(() => source = 'autre'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: source == 'autre' ? const Color(0xFFE3F2FD) : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: source == 'autre' ? const Color(0xFF1A73E8) : const Color(0xFFE5E7EB), width: source == 'autre' ? 2 : 1),
+                          ),
+                          child: const Center(child: Text('💵 Autre', style: TextStyle(fontWeight: FontWeight.w600))),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text('Montants rapides', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0, 75.0, 100.0].map((m) => InkWell(
+                    onTap: () {
+                      _addQuickEntry(m, source);
+                      Navigator.pop(ctx);
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 75,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.1), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF10B981), width: 1)),
+                      child: Center(child: Text('+${m.toStringAsFixed(0)}€', style: const TextStyle(color: Color(0xFF065F46), fontWeight: FontWeight.w700, fontSize: 14))),
+                    ),
+                  )).toList(),
+                ),
+                const SizedBox(height: 16),
+                const Text('Ou saisir un montant', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: amountCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                        decoration: InputDecoration(
+                          hintText: 'Montant €',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () {
+                        final amount = double.tryParse(amountCtrl.text) ?? 0;
+                        if (amount > 0) {
+                          _addQuickEntry(amount, source);
+                          Navigator.pop(ctx);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: const Text('Ajouter'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _addQuickEntry(double amount, String source) {
+    setState(() {
+      _currentMonthData.entries.add(Entry(
+        id: 'quick-${DateTime.now().millisecondsSinceEpoch}',
+        type: 'income',
+        label: source == 'livraison' ? '🚚 Course' : '💵 Autre revenu',
+        amount: amount,
+        taxable: source == 'livraison',
+        source: source,
+        date: DateTime.now(),
+      ));
+    });
+    _saveState();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('✅ +${amount.toStringAsFixed(0)}€ ajoutés'),
+      duration: const Duration(seconds: 2),
+      backgroundColor: const Color(0xFF10B981),
+    ));
   }
 
   Widget _buildQuickNav() {
@@ -1223,7 +1536,7 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _inputField(label: '🏠 Charges', value: _objectives['fixes']!, onChanged: (v) { setState(() { _objectives['fixes'] = v; _autoCreateSyntheticBill(v); }); }, suffix: '€/mois')),
+              Expanded(child: _inputField(label: '🏠 Factures à payer', value: _objectives['fixes']!, onChanged: (v) { setState(() { _objectives['fixes'] = v; _autoCreateSyntheticBill(v); }); }, suffix: '€/mois')),
               const SizedBox(width: 12),
               Expanded(child: _inputField(label: '🍔 Perso', value: _objectives['perso']!, onChanged: (v) { setState(() { _objectives['perso'] = v; }); }, suffix: '€/mois')),
             ],
@@ -1377,7 +1690,7 @@ class _HomePageState extends State<HomePage> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _quickStat('CA', calc['totalCA']!, const Color(0xFF1A73E8)),
-                _quickStat('Dépenses', (calc['paidExpenses'] ?? 0) + (calc['unpaidBills'] ?? 0), Colors.red),
+                _quickStat('Total sorties', (calc['paidExpenses'] ?? 0) + (calc['unpaidBills'] ?? 0), Colors.red),
                 _quickStat('Frais virem.', calc['transferFees']!, Colors.orange),
               ],
             ),
@@ -1388,6 +1701,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _actionButton({required String icon, required String label, required Color color, required VoidCallback onTap}) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = width < 360;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1395,7 +1710,7 @@ class _HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(16),
         child: Container(
           height: 72,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             gradient: LinearGradient(colors: [color.withOpacity(0.12), color.withOpacity(0.04)], begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(16),
@@ -1404,10 +1719,10 @@ class _HomePageState extends State<HomePage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(icon, style: const TextStyle(fontSize: 26)),
-              const SizedBox(width: 8),
+              Text(icon, style: TextStyle(fontSize: compact ? 22 : 26)),
+              const SizedBox(width: 6),
               Flexible(
-                child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: color), overflow: TextOverflow.ellipsis, softWrap: false),
+                child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: compact ? 12 : 14, color: color), overflow: TextOverflow.ellipsis, softWrap: false),
               ),
             ],
           ),
@@ -1429,35 +1744,70 @@ class _HomePageState extends State<HomePage> {
     final targetCA = calc['targetCA'] ?? 0.0;
     final livraisonCA = calc['livraisonCA'] ?? 0.0;
     final unpaidBills = calc['unpaidBills'] ?? 0.0;
-    final ecart = netAfterBills - netNeeds;
-    final ecartLabel = netNeeds > 0
-        ? (ecart >= 0
-            ? '✓ Besoins couverts (+${_formatCurrency(ecart)})'
-            : '⚠️ Manque ${_formatCurrency(-ecart)} pour couvrir les ${_formatCurrency(netNeeds)} de besoins')
-        : 'Définissez vos besoins dans l\'étape 1';
+    final remainingForGoal = (targetCA - livraisonCA).clamp(0.0, double.infinity);
+    final remainingBills = unpaidBills;
+    String detailLabel;
+    if (netNeeds == 0) {
+      detailLabel = 'Définissez vos besoins dans l\'étape 1';
+    } else if (netAfterBills >= netNeeds) {
+      final surplus = netAfterBills - netNeeds;
+      detailLabel = '✓ Objectif atteint (+${_formatCurrency(surplus)} au-dessus)';
+    } else {
+      final manque = netNeeds - netAfterBills;
+      detailLabel = '⚠️ Manque ${_formatCurrency(manque)} pour couvrir les ${_formatCurrency(netNeeds)} de besoins nets';
+    }
     return _section(
       title: '📊 Votre résultat',
       subtitle: 'Situation en temps réel',
       child: Column(
         children: [
           _resultCard(
-            label: unpaidBills > 0 ? '💼 NET après factures' : '💼 NET en poche',
+            label: unpaidBills > 0 ? '💰 NET après factures' : '💰 NET en poche',
             value: netAfterBills,
-            detail: ecartLabel,
+            detail: detailLabel,
             isPrimary: false,
           ),
+          if (targetCA > 0) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: livraisonCA >= targetCA ? const Color(0xFFF0FDF4) : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: livraisonCA >= targetCA ? const Color(0xFFBBF7D0) : const Color(0xFFBFDBFE), width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(livraisonCA >= targetCA ? Icons.check_circle : Icons.flag, color: livraisonCA >= targetCA ? const Color(0xFF10B981) : const Color(0xFF1A73E8), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(livraisonCA >= targetCA ? 'Objectif Uber atteint' : 'Objectif Uber à gagner', style: TextStyle(fontSize: 12, color: livraisonCA >= targetCA ? const Color(0xFF065F46) : const Color(0xFF1E40AF), fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 2),
+                        Text(livraisonCA >= targetCA
+                            ? 'Tu as gagné ${_formatCurrency(livraisonCA)} de Uber (cible : ${_formatCurrency(targetCA)})'
+                            : 'Reste ${_formatCurrency(remainingForGoal)} à gagner (${_formatCurrency(livraisonCA)} / ${_formatCurrency(targetCA)})', style: TextStyle(fontSize: 12, color: livraisonCA >= targetCA ? const Color(0xFF047857) : const Color(0xFF1E3A8A))),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (unpaidBills > 0) ...[
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFDE68A), width: 1)),
               child: Row(
                 children: [
-                  const Text('💰', style: TextStyle(fontSize: 14)),
+                  const Icon(Icons.receipt_long, size: 16, color: Color(0xFFD97706)),
                   const SizedBox(width: 8),
-                  const Text('NET avant factures :', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                  const Text('Factures en attente :', style: TextStyle(fontSize: 12, color: Color(0xFF92400E), fontWeight: FontWeight.w600)),
                   const Spacer(),
-                  Text(_formatCurrency(netBalance), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF374151))),
+                  Text(_formatCurrency(remainingBills), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFB45309))),
                 ],
               ),
             ),
@@ -1820,12 +2170,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _resultCard({required String label, required double value, required String detail, required bool isPrimary, double? targetValue}) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = width < 360;
     final target = targetValue ?? 0;
     final isPositive = target > 0 ? value >= target : value >= 0;
     final color = isPositive ? const Color(0xFF10B981) : const Color(0xFFEF4444);
     final bgColor = isPositive ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2);
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: EdgeInsets.all(compact ? 16 : 22),
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: isPrimary ? [Colors.white, bgColor] : [Colors.white, const Color(0xFFFAFBFC)], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(18),
@@ -1916,6 +2268,8 @@ class _HomePageState extends State<HomePage> {
   Widget _buildHistorySection() {
     final entries = [..._currentMonthData.entries]..sort((a, b) => b.date.compareTo(a.date));
     final nonEssential = entries.where((e) => e.type == 'expense' && e.nonEssential).toList();
+    final shown = entries.take(20).toList();
+    final hasMore = entries.length > 20;
 
     return _section(
       title: '📋 Historique',
@@ -1933,13 +2287,13 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   const Text('💡 Économies possibles', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green)),
                   const SizedBox(height: 8),
-                  ...nonEssential.map((e) => Padding(
+                  ...nonEssential.take(5).map((e) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
                         const Text('✂️'),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('${e.label} (${_formatCurrency(e.amount)})', style: const TextStyle(fontSize: 13))),
+                        Expanded(child: Text('${e.label} (${_formatCurrency(e.amount)})', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
                         IconButton(icon: const Icon(Icons.close, color: Colors.red, size: 20), onPressed: () => _deleteEntry(e.id)),
                       ],
                     ),
@@ -1954,8 +2308,35 @@ class _HomePageState extends State<HomePage> {
                 children: [Text('📝', style: TextStyle(fontSize: 48)), SizedBox(height: 8), Text('Aucune opération', style: TextStyle(color: Color(0xFF5F6368)))],
               ),
             )
-          else
-            ...entries.map((e) => _entryItem(e)),
+          else ...[
+            Container(
+              constraints: const BoxConstraints(maxHeight: 420),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFBFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(8),
+                  itemCount: shown.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  itemBuilder: (ctx, i) => _entryItem(shown[i]),
+                ),
+              ),
+            ),
+            if (hasMore)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Affichage des 20 plus récentes sur ${entries.length} opérations. Faites défiler la page pour voir le reste.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant, fontStyle: FontStyle.italic),
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -1963,45 +2344,48 @@ class _HomePageState extends State<HomePage> {
 
   Widget _entryItem(Entry entry) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: entry.isCarryOver ? const Color(0xFFE8F5E9) : const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: entry.nonEssential ? Border(left: const BorderSide(color: Colors.orange, width: 4)) : null,
+        color: entry.isCarryOver ? const Color(0xFFF0FDF4) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border(
+          left: BorderSide(
+            color: entry.nonEssential
+                ? const Color(0xFFF59E0B)
+                : entry.type == 'income'
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFFEF4444),
+            width: 3,
+          ),
+        ),
       ),
       child: Row(
         children: [
-          Text(entry.isCarryOver ? '🔄' : (entry.type == 'income' ? '💰' : '💸'), style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 12),
+          Text(entry.isCarryOver ? '🔄' : (entry.type == 'income' ? (entry.source == 'autre' ? '💵' : '💰') : (entry.isBill ? '📋' : '💸')), style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    Expanded(child: Text(entry.label, style: const TextStyle(fontWeight: FontWeight.w600))),
-                    if (entry.nonEssential) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(4)),
-                        child: const Text('✂️', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
-                  ],
+                Text(
+                  entry.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '${_formatDate(entry.date)}${entry.type == 'income' && entry.taxable != false ? ' • Soumis URSSAF' : ''}${entry.isCarryOver ? ' • Report auto' : ''}${entry.nonEssential ? ' • ✂️ Économisable' : ''}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF5F6368)),
+                  _formatDate(entry.date),
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF)),
                 ),
               ],
             ),
           ),
-          Text('${entry.type == 'income' ? '+' : '-'}${_formatCurrency(entry.amount)}', style: TextStyle(fontWeight: FontWeight.w700, color: entry.type == 'income' ? Colors.green : Colors.red)),
+          const SizedBox(width: 6),
+          Text('${entry.type == 'income' ? '+' : '-'}${_formatCurrency(entry.amount)}', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: entry.type == 'income' ? const Color(0xFF10B981) : const Color(0xFFEF4444))),
           if (!entry.isCarryOver) ...[
-            IconButton(icon: const Icon(Icons.edit, color: Color(0xFF1A73E8), size: 20), onPressed: () => _showEditDialog(entry)),
-            IconButton(icon: const Icon(Icons.close, color: Color(0xFF5F6368), size: 20), onPressed: () => _deleteEntry(entry.id)),
+            InkWell(onTap: () => _showEditDialog(entry), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, color: Color(0xFF1A73E8), size: 16))),
+            InkWell(onTap: () => _deleteEntry(entry.id), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, color: Color(0xFF9CA3AF), size: 16))),
           ],
         ],
       ),
@@ -2009,8 +2393,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _section({required String title, required String subtitle, required Widget child, Widget? action, Color? accentColor}) {
+    final width = MediaQuery.of(context).size.width;
+    final compact = width < 360;
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(compact ? 14 : 18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -2029,9 +2415,9 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1F2937)), overflow: TextOverflow.ellipsis),
+                    Text(title, style: TextStyle(fontSize: compact ? 14 : 16, fontWeight: FontWeight.w700, color: const Color(0xFF1F2937)), overflow: TextOverflow.ellipsis, softWrap: true),
                     const SizedBox(height: 2),
-                    Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)), overflow: TextOverflow.ellipsis),
+                    Text(subtitle, style: TextStyle(fontSize: compact ? 11 : 12, color: const Color(0xFF6B7280)), overflow: TextOverflow.ellipsis, softWrap: true),
                   ],
                 ),
               ),
