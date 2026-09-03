@@ -46,3 +46,9 @@ app.*.map.json
 
 # Backup
 /backup/
+
+# Android signing secrets (NE PAS COMMITER)
+/android/key.properties
+/android/upload-keystore.jks
+/android/*.jks
+/android/*.keystore

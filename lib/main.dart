@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'legal_screens.dart';
+import 'onboarding.dart';
+import 'theme.dart';
+
+const String kPrefsOnboardingCompleted = 'onboarding_completed';
+const String kPrefsThemeMode = 'theme_mode';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,15 +27,77 @@ class BudgetLivreurApp extends StatelessWidget {
     return MaterialApp(
       title: 'Carnet Livreur',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A73E8)),
-        useMaterial3: true,
-      ),
-      home: const HomePage(),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
+      home: const _RootGate(),
     );
   }
 }
 
+class _RootGate extends StatefulWidget {
+  const _RootGate();
+
+  @override
+  State<_RootGate> createState() => _RootGateState();
+}
+
+class _RootGateState extends State<_RootGate> {
+  bool? _showOnboarding;
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final prefs = await SharedPreferences.getInstance();
+    final completed = prefs.getBool(kPrefsOnboardingCompleted) ?? false;
+    final mode = prefs.getString(kPrefsThemeMode) ?? 'system';
+    setState(() {
+      _showOnboarding = !completed;
+      _themeMode = _parseThemeMode(mode);
+    });
+  }
+
+  ThemeMode _parseThemeMode(String v) {
+    switch (v) {
+      case 'light': return ThemeMode.light;
+      case 'dark': return ThemeMode.dark;
+      default: return ThemeMode.system;
+    }
+  }
+
+  Future<void> _setThemeMode(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = mode == ThemeMode.light ? 'light' : mode == ThemeMode.dark ? 'dark' : 'system';
+    await prefs.setString(kPrefsThemeMode, v);
+    setState(() => _themeMode = mode);
+  }
+
+  void _onOnboardingComplete() {
+    setState(() => _showOnboarding = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showOnboarding == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return MaterialApp(
+      title: 'Carnet Livreur',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: _themeMode,
+      home: _showOnboarding!
+          ? OnboardingScreen(onComplete: _onOnboardingComplete)
+          : HomePage(onThemeModeChanged: _setThemeMode, currentThemeMode: _themeMode),
+    );
+  }
+}
 class Entry {
   String id;
   String type;
@@ -119,7 +186,9 @@ class MonthData {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
+  final ThemeMode? currentThemeMode;
+  HomePage({super.key, this.onThemeModeChanged, this.currentThemeMode});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -171,7 +240,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _initPrefs() async {
     try {
       _prefs = await SharedPreferences.getInstance().timeout(
-        const Duration(seconds: 5),
+        Duration(seconds: 5),
       );
       _loadState();
     } catch (e) {
@@ -449,7 +518,7 @@ class _HomePageState extends State<HomePage> {
                   },
                   items: (_months.keys.toList()..sort()).reversed.map((key) => DropdownMenuItem(value: key, child: Text(_getMonthLabel(key)))).toList(),
                 ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               _buildSummaryContent(),
             ],
           ),
@@ -474,10 +543,10 @@ class _HomePageState extends State<HomePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('📅 ${_getMonthLabel(_currentMonthKey)}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         _summaryRow('💰 Revenus', incomes.length, calc['totalCA']!, Colors.green),
         _summaryRow('⛽ Dépenses', expenses.length, (calc['paidExpenses'] ?? 0) + (calc['unpaidBills'] ?? 0), Colors.red),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.only(left: 16),
           child: Column(
@@ -488,14 +557,14 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        const Divider(),
+        Divider(),
         _summaryRow('🏛️ URSSAF', null, calc['urssafToPay']!, Colors.orange),
         _summaryRow('💸 Frais virements', null, calc['transferFees']!, Colors.orange),
-        const Divider(),
+        Divider(),
         _summaryRow('💼 Solde net', null, calc['netBalance']!, calc['netBalance']! >= 0 ? Colors.green : Colors.red),
         if (calc['carryOver']! > 0)
           _summaryRow('🔄 Report mois suivant', null, calc['carryOver']!, Colors.blue),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -505,8 +574,8 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('💡 Économies réalisées', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
+              Text('💡 Économies réalisées', style: TextStyle(fontWeight: FontWeight.w600)),
+              SizedBox(height: 4),
               Text('Total économisable: ${_formatCurrency(totalNonEssential)}', style: const TextStyle(fontSize: 13)),
               if (totalNonEssential > 0)
                 Text('En supprimant les dépenses non essentielles, vous pourriez économiser ${_formatCurrency(totalNonEssential)} !',
@@ -623,11 +692,11 @@ class _HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('📋 Copiez ce texte pour sauvegarder vos données (collez-le plus tard pour restaurer).', style: TextStyle(fontSize: 12, color: Color(0xFF374151)), softWrap: true),
-              const SizedBox(height: 12),
+              Text('📋 Copiez ce texte pour sauvegarder vos données (collez-le plus tard pour restaurer).', style: TextStyle(fontSize: 12, color: context.textSecondary), softWrap: true),
+              SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: context.dividerColor, borderRadius: BorderRadius.circular(8)),
                 constraints: const BoxConstraints(maxHeight: 200),
                 child: SingleChildScrollView(
                   child: SelectableText(json, style: const TextStyle(fontSize: 9, fontFamily: 'monospace')),
@@ -683,22 +752,22 @@ class _HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 '📋 Comment faire :\n'
                 '1. Uber Driver → Paiements → Historique\n'
                 '2. Exporter en CSV\n'
                 '3. Ouvrir le fichier, copier le contenu\n'
                 '4. Coller ci-dessous',
-                style: TextStyle(fontSize: 12, color: Color(0xFF374151)),
+                style: TextStyle(fontSize: 12, color: context.textSecondary),
                 softWrap: true,
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFBFDBFE), width: 1)),
                 child: const Text('💡 Formats supportés : date,montant ou date,type,montant', style: TextStyle(fontSize: 11, color: Color(0xFF1E40AF)), softWrap: true),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               TextField(
                 controller: ctrl,
                 maxLines: 8,
@@ -835,6 +904,16 @@ class _HomePageState extends State<HomePage> {
     return result;
   }
 
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _SettingsDialog(
+        currentThemeMode: widget.currentThemeMode ?? ThemeMode.system,
+        onThemeModeChanged: widget.onThemeModeChanged,
+      ),
+    );
+  }
+
   void _showHelpDialog() {
     showDialog(
       context: context,
@@ -930,8 +1009,8 @@ class _HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-          const SizedBox(height: 4),
-          Text(content, style: const TextStyle(fontSize: 13, color: Color(0xFF5F6368))),
+          SizedBox(height: 4),
+          Text(content, style: TextStyle(fontSize: 13, color: context.textSecondary)),
         ],
       ),
     );
@@ -960,7 +1039,7 @@ class _HomePageState extends State<HomePage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 TextField(
                   controller: amountCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -970,9 +1049,9 @@ class _HomePageState extends State<HomePage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: 12),
-                const Align(alignment: Alignment.centerLeft, child: Text('Source du revenu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                const SizedBox(height: 4),
+                SizedBox(height: 12),
+                Align(alignment: Alignment.centerLeft, child: Text('Source du revenu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+                SizedBox(height: 4),
                 Row(
                   children: [
                     Expanded(
@@ -985,7 +1064,7 @@ class _HomePageState extends State<HomePage> {
                         }),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Expanded(
                       child: ChoiceChip(
                         label: const Text('💵 Autre'),
@@ -999,14 +1078,14 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 if (source == 'autre') ...[
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(color: const Color(0xFFE3F2FD), borderRadius: BorderRadius.circular(8)),
                     child: const Text('ℹ️ Pas de prise en compte URSSAF, hors progression', style: TextStyle(fontSize: 11, color: Color(0xFF1565C0)), softWrap: true),
                   ),
                 ],
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 CheckboxListTile(
                   title: const Text('Soumis à URSSAF (CA imposable)', style: TextStyle(fontSize: 14)),
                   value: taxable,
@@ -1071,7 +1150,7 @@ class _HomePageState extends State<HomePage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 TextField(
                   controller: amountCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1081,7 +1160,7 @@ class _HomePageState extends State<HomePage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 _buildCheckRow('Non essentielle (loisirs...)', nonEssential, (v) => setDialogState(() => nonEssential = v)),
                 _buildCheckRow('📋 C\'est une facture (à payer)', isBill, (v) => setDialogState(() => isBill = v)),
                 if (isBill) ...[
@@ -1157,7 +1236,7 @@ class _HomePageState extends State<HomePage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: 12),
                 TextField(
                   controller: amountCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1168,9 +1247,9 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 if (entry.type == 'income') ...[
-                  const SizedBox(height: 12),
-                  const Align(alignment: Alignment.centerLeft, child: Text('Source du revenu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 12),
+                  Align(alignment: Alignment.centerLeft, child: Text('Source du revenu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+                  SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
@@ -1183,7 +1262,7 @@ class _HomePageState extends State<HomePage> {
                           }),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Expanded(
                         child: ChoiceChip(
                           label: const Text('💵 Autre'),
@@ -1196,7 +1275,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   CheckboxListTile(
                     title: const Text('Soumis à URSSAF (CA imposable)', style: TextStyle(fontSize: 14)),
                     value: taxable,
@@ -1206,7 +1285,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ],
                 if (entry.type == 'expense') ...[
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   _buildCheckRow('Non essentielle (loisirs...)', nonEssential, (v) => setDialogState(() => nonEssential = v)),
                   _buildCheckRow('📋 C\'est une facture', isBill, (v) => setDialogState(() => isBill = v)),
                   if (isBill) ...[
@@ -1285,14 +1364,14 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Chargement...', style: TextStyle(color: Color(0xFF5F6368))),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text('Chargement...', style: TextStyle(color: context.textSecondary)),
             ],
           ),
         ),
@@ -1307,19 +1386,19 @@ class _HomePageState extends State<HomePage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('⚠️', style: TextStyle(fontSize: 48)),
-                const SizedBox(height: 16),
-                const Text(
+                Text('⚠️', style: TextStyle(fontSize: 48)),
+                SizedBox(height: 16),
+                Text(
                   'Erreur de chargement',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(height: 8),
-                const Text(
+                SizedBox(height: 8),
+                Text(
                   'Impossible de charger les données. Réessayez ou réinstallez l\'application.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF5F6368)),
+                  style: TextStyle(color: context.textSecondary),
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
                 ElevatedButton(
                   onPressed: () {
                     setState(() {
@@ -1341,9 +1420,9 @@ class _HomePageState extends State<HomePage> {
     final hasObjectives = _objectives['perso']! > 0 || _objectives['fixes']! > 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: context.appBackground,
       appBar: AppBar(
-        title: const Text('📒 Carnet de Compte'),
+        title: const Text('📒', style: TextStyle(fontSize: 28)),
         centerTitle: false,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(20),
@@ -1351,15 +1430,15 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.only(left: 16, right: 16, bottom: 6),
             child: Row(
               children: [
-                const Text('🚚', style: TextStyle(fontSize: 12)),
                 const SizedBox(width: 4),
-                Text('Suivi intelligent pour livreurs', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.9))),
+                Text('Suivi intelligent pour livreurs', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.9))),
               ],
             ),
           ),
         ),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: context.isDark ? AppColors.darkSurface : AppColors.brand,
         foregroundColor: Colors.white,
+        iconTheme: IconThemeData(color: context.isDark ? AppColors.darkTextPrimary : Colors.white),
         elevation: 0,
         actions: [
           if (_months.length > 1)
@@ -1377,9 +1456,9 @@ class _HomePageState extends State<HomePage> {
                   child: Row(
                     children: [
                       if (key == _currentMonthKey)
-                        const Icon(Icons.check, size: 18, color: Color(0xFF1A73E8)),
+                        Icon(Icons.check, size: 18, color: Color(0xFF1A73E8)),
                       if (key == _currentMonthKey)
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                       Text(_getMonthLabel(key)),
                     ],
                   ),
@@ -1406,10 +1485,71 @@ class _HomePageState extends State<HomePage> {
             onPressed: _showBackupDialog,
             tooltip: 'Sauvegarder',
           ),
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            onPressed: _showHelpDialog,
-            tooltip: 'Aide',
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'Plus',
+            onSelected: (value) async {
+              switch (value) {
+                case 'help':
+                  _showHelpDialog();
+                  break;
+                case 'settings':
+                  _showSettingsDialog();
+                  break;
+                case 'about':
+                  showDialog(
+                    context: context,
+                    builder: (_) => const AppAboutDialog(),
+                  );
+                  break;
+                case 'privacy':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+                  );
+                  break;
+                case 'terms':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TermsScreen()),
+                  );
+                  break;
+                case 'replay_onboarding':
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool(kPrefsOnboardingCompleted, false);
+                  if (context.mounted) {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => OnboardingScreen(onComplete: () => Navigator.of(context).pop()),
+                    ));
+                  }
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'help',
+                child: Row(children: [Icon(Icons.help_outline, size: 20), SizedBox(width: 12), Text('Aide')]),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: Row(children: [Icon(Icons.settings_outlined, size: 20), SizedBox(width: 12), Text('Réglages')]),
+              ),
+              PopupMenuItem(
+                value: 'replay_onboarding',
+                child: Row(children: [Icon(Icons.replay_outlined, size: 20), SizedBox(width: 12), Text('Rejouer l\'introduction')]),
+              ),
+              PopupMenuItem(
+                value: 'about',
+                child: Row(children: [Icon(Icons.info_outline, size: 20), SizedBox(width: 12), Text('À propos')]),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'privacy',
+                child: Row(children: [Icon(Icons.privacy_tip_outlined, size: 20), SizedBox(width: 12), Text('Confidentialité')]),
+              ),
+              PopupMenuItem(
+                value: 'terms',
+                child: Row(children: [Icon(Icons.description_outlined, size: 20), SizedBox(width: 12), Text('Mentions légales')]),
+              ),
+            ],
           ),
         ],
       ),
@@ -1425,9 +1565,9 @@ class _HomePageState extends State<HomePage> {
                   Center(
                     child: Column(
                       children: [
-                        Text(_getMonthLabel(_currentMonthKey), style: const TextStyle(fontSize: 16, color: Color(0xFF5F6368))),
+                        Text(_getMonthLabel(_currentMonthKey), style: TextStyle(fontSize: 16, color: context.textSecondary)),
                         if ((calc['targetCA'] ?? 0) > 0) ...[
-                          const SizedBox(height: 6),
+                          SizedBox(height: 6),
                           Builder(builder: (ctx) {
                             final target = calc['targetCA']!;
                             final current = calc['livraisonCA'] ?? 0.0;
@@ -1442,7 +1582,7 @@ class _HomePageState extends State<HomePage> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(reached ? '🎉' : '🎯', style: const TextStyle(fontSize: 14)),
-                                  const SizedBox(width: 6),
+                                  SizedBox(width: 6),
                                   Text('Objectif Uber : ${reached ? '' : '-'}${_formatCurrency(target)}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: reached ? const Color(0xFF065F46) : const Color(0xFFDC2626))),
                                 ],
                               ),
@@ -1459,17 +1599,17 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  SizedBox(height: 20),
                   Container(key: _sectionKeys['objectives'], child: _buildObjectivesSection(calc)),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Container(key: _sectionKeys['transfer'], child: _buildTransferSection()),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   _buildActionSection(calc),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Container(key: _sectionKeys['result'], child: _buildResultSection(calc)),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Container(key: _sectionKeys['entries'], child: _buildHistorySection()),
-                  const SizedBox(height: 40),
+                  SizedBox(height: 40),
                 ],
               ),
             ),
@@ -1479,7 +1619,7 @@ class _HomePageState extends State<HomePage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showQuickAdd,
         backgroundColor: const Color(0xFF1A73E8),
-        foregroundColor: Colors.white,
+        foregroundColor: context.cardBackground,
         icon: const Icon(Icons.flash_on),
         label: const Text('Saisie rapide'),
       ),
@@ -1497,9 +1637,9 @@ class _HomePageState extends State<HomePage> {
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            decoration: BoxDecoration(
+              color: context.cardBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -1507,11 +1647,11 @@ class _HomePageState extends State<HomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
-                  child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+                  child: Container(width: 40, height: 4, decoration: BoxDecoration(color: context.borderColor, borderRadius: BorderRadius.circular(2))),
                 ),
-                const SizedBox(height: 16),
-                const Text('⚡ Saisie rapide', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
+                Text('⚡ Saisie rapide', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: context.textPrimary)),
+                SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
@@ -1520,24 +1660,24 @@ class _HomePageState extends State<HomePage> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            color: source == 'livraison' ? const Color(0xFFE8F0FE) : Colors.white,
+                            color: source == 'livraison' ? Color(0xFFE8F0FE) : context.cardBackground,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: source == 'livraison' ? const Color(0xFF1A73E8) : const Color(0xFFE5E7EB), width: source == 'livraison' ? 2 : 1),
+                            border: Border.all(color: source == 'livraison' ? Color(0xFF1A73E8) : context.borderColor, width: source == 'livraison' ? 2 : 1),
                           ),
                           child: const Center(child: Text('🚚 Livraison', style: TextStyle(fontWeight: FontWeight.w600))),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Expanded(
                       child: GestureDetector(
                         onTap: () => setSheet(() => source = 'autre'),
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
-                            color: source == 'autre' ? const Color(0xFFE3F2FD) : Colors.white,
+                            color: source == 'autre' ? Color(0xFFE3F2FD) : context.cardBackground,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: source == 'autre' ? const Color(0xFF1A73E8) : const Color(0xFFE5E7EB), width: source == 'autre' ? 2 : 1),
+                            border: Border.all(color: source == 'autre' ? Color(0xFF1A73E8) : context.borderColor, width: source == 'autre' ? 2 : 1),
                           ),
                           child: const Center(child: Text('💵 Autre', style: TextStyle(fontWeight: FontWeight.w600))),
                         ),
@@ -1545,9 +1685,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                const Text('Montants rapides', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
+                SizedBox(height: 16),
+                Text('Montants rapides', style: TextStyle(fontSize: 12, color: context.textSecondary, fontWeight: FontWeight.w600)),
+                SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -1565,9 +1705,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                   )).toList(),
                 ),
-                const SizedBox(height: 16),
-                const Text('Ou saisir un montant', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
+                SizedBox(height: 16),
+                Text('Ou saisir un montant', style: TextStyle(fontSize: 12, color: context.textSecondary, fontWeight: FontWeight.w600)),
+                SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -1582,7 +1722,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: () {
                         final amount = double.tryParse(amountCtrl.text) ?? 0;
@@ -1591,12 +1731,12 @@ class _HomePageState extends State<HomePage> {
                           Navigator.pop(ctx);
                         }
                       },
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF1A73E8), foregroundColor: context.cardBackground, padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       child: const Text('Ajouter'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
               ],
             ),
           ),
@@ -1634,8 +1774,8 @@ class _HomePageState extends State<HomePage> {
     ];
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))],
+        color: context.cardBackground,
+        boxShadow: [BoxShadow(color: context.shadowColor, blurRadius: 4, offset: Offset(0, 2))],
       ),
       child: SafeArea(
         bottom: false,
@@ -1658,13 +1798,13 @@ class _HomePageState extends State<HomePage> {
                     decoration: BoxDecoration(
                       color: isActive ? const Color(0xFFE8F0FE) : Colors.transparent,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isActive ? const Color(0xFF1A73E8) : Colors.grey.shade300, width: isActive ? 2 : 1),
+                      border: Border.all(color: isActive ? Color(0xFF1A73E8) : context.borderColor, width: isActive ? 2 : 1),
                     ),
                     child: Row(
                       children: [
                         Text(t['icon']!, style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 6),
-                        Text(t['label']!, style: TextStyle(fontSize: 13, fontWeight: isActive ? FontWeight.w700 : FontWeight.w500, color: isActive ? const Color(0xFF1A73E8) : Colors.grey.shade700)),
+                        SizedBox(width: 6),
+                        Text(t['label']!, style: TextStyle(fontSize: 13, fontWeight: isActive ? FontWeight.w700 : FontWeight.w500, color: isActive ? Color(0xFF1A73E8) : context.textSecondary)),
                       ],
                     ),
                   ),
@@ -1714,39 +1854,39 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Row(
             children: [
               Expanded(child: _inputField(label: '🏠 Factures à payer', value: _objectives['fixes']!, onChanged: (v) { setState(() { _objectives['fixes'] = v; _autoCreateSyntheticBill(v); }); }, suffix: '€/mois')),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(child: _inputField(label: '🍔 Perso', value: _objectives['perso']!, onChanged: (v) { setState(() { _objectives['perso'] = v; }); }, suffix: '€/mois')),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Row(
             children: [
               Expanded(child: _inputField(label: '🐷 Épargne', value: _objectives['epargne']!, onChanged: (v) { setState(() { _objectives['epargne'] = v; }); }, suffix: '€/mois')),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(child: _inputField(label: '🏛️ URSSAF', value: _objectives['urssaf']!, onChanged: (v) { setState(() { _objectives['urssaf'] = v; }); }, suffix: '%')),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Row(
             children: [
               Expanded(child: _inputField(label: '💰 Aides (APL, RSA...)', value: aides, onChanged: (v) { setState(() { _objectives['aides'] = v; }); }, suffix: '€/mois')),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () { _saveState(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Besoins enregistrés'))); },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF1A73E8), foregroundColor: context.cardBackground, padding: EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               child: const Text('Valider mes besoins'),
             ),
           ),
           if (calc['targetCA']! > 0) ...[
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Builder(builder: (ctx) {
               final target = calc['targetCA']!;
               final current = calc['livraisonCA'] ?? 0.0;
@@ -1760,7 +1900,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   children: [
                     Text(reached ? '🎉 Objectif CA Uber atteint' : '🎯 Objectif CA Uber', style: TextStyle(fontSize: 14, color: reached ? const Color(0xFF065F46) : const Color(0xFF991B1B), fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6),
                     Text('${reached ? '' : '-'}${_formatCurrency(target)}', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: reached ? const Color(0xFF065F46) : const Color(0xFFDC2626))),
                     Text(reached ? 'Bravo ! Continuez comme ça.' : 'à gagner en livraisons (après ${_formatCurrency(_objectives['aides'] ?? 0)} d\'aides déduites)', style: TextStyle(fontSize: 12, color: reached ? const Color(0xFF047857) : const Color(0xFFB91C1C)), textAlign: TextAlign.center),
                   ],
@@ -1769,7 +1909,7 @@ class _HomePageState extends State<HomePage> {
             }),
           ],
           if (_objectives['fixes']! > 0) ...[
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Builder(builder: (ctx) {
               final ok = totalBills >= _objectives['fixes']!;
               return Container(
@@ -1785,11 +1925,11 @@ class _HomePageState extends State<HomePage> {
                     Row(
                       children: [
                         Icon(ok ? Icons.check_circle : Icons.info_outline, color: ok ? const Color(0xFF10B981) : const Color(0xFFD97706), size: 18),
-                        const SizedBox(width: 6),
+                        SizedBox(width: 6),
                         Text('Factures détaillées', style: TextStyle(fontSize: 12, color: ok ? const Color(0xFF065F46) : const Color(0xFF92400E), fontWeight: FontWeight.w700)),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1798,7 +1938,7 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     if (!ok) ...[
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4),
                       Text('Manque ${_formatCurrency(_objectives['fixes']! - totalBills)} à détailler', style: const TextStyle(fontSize: 11, color: Color(0xFF92400E), fontStyle: FontStyle.italic)),
                     ],
                   ],
@@ -1818,7 +1958,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         children: [
           _transferOption(value: 'weekly', icon: '📅', title: 'Hebdomadaire', subtitle: 'Gratuit', badge: 'GRATUIT', badgeColor: Colors.green),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           _transferOption(value: 'instant', icon: '⚡', title: 'Instantané', subtitle: '0.99€ par virement', badge: '-0.99€', badgeColor: Colors.red),
         ],
       ),
@@ -1832,14 +1972,14 @@ class _HomePageState extends State<HomePage> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFE8F0FE) : Colors.white,
+          color: isSelected ? Color(0xFFE8F0FE) : context.cardBackground,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isSelected ? const Color(0xFF1A73E8) : Colors.grey.shade300, width: 2),
+          border: Border.all(color: isSelected ? Color(0xFF1A73E8) : context.borderColor, width: 2),
         ),
         child: Row(
           children: [Text(icon, style: const TextStyle(fontSize: 24)), const SizedBox(width: 12), Expanded(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w600)), Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF5F6368)))],
+            children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600)), Text(subtitle, style: TextStyle(fontSize: 12, color: context.textSecondary))],
           )), Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(color: badgeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
@@ -1859,14 +1999,14 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               Expanded(child: _actionButton(icon: '💰', label: '+ Revenu', color: Colors.green, onTap: _showAddIncomeDialog)),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(child: _actionButton(icon: '⛽', label: '− Dépense', color: Colors.red, onTap: _showAddExpenseDialog)),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 2))]),
+            decoration: BoxDecoration(color: context.cardBackground, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: context.shadowColor, blurRadius: 5, offset: Offset(0, 2))]),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -1901,7 +2041,7 @@ class _HomePageState extends State<HomePage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(icon, style: TextStyle(fontSize: compact ? 22 : 26)),
-              const SizedBox(width: 6),
+              SizedBox(width: 6),
               Flexible(
                 child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, fontSize: compact ? 12 : 14, color: color), overflow: TextOverflow.ellipsis, softWrap: false),
               ),
@@ -1914,7 +2054,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _quickStat(String label, double value, Color color) {
     return Column(
-      children: [Text(_formatCurrency(value), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: color)), Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF5F6368)))],
+      children: [Text(_formatCurrency(value), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: color)), Text(label, style: TextStyle(fontSize: 10, color: context.textSecondary))],
     );
   }
 
@@ -1949,7 +2089,7 @@ class _HomePageState extends State<HomePage> {
             isPrimary: false,
           ),
           if (targetCA > 0) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -1960,13 +2100,13 @@ class _HomePageState extends State<HomePage> {
               child: Row(
                 children: [
                   Icon(livraisonCA >= targetCA ? Icons.check_circle : Icons.flag, color: livraisonCA >= targetCA ? const Color(0xFF10B981) : const Color(0xFF1A73E8), size: 20),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(livraisonCA >= targetCA ? 'Objectif Uber atteint' : 'Objectif Uber à gagner', style: TextStyle(fontSize: 12, color: livraisonCA >= targetCA ? const Color(0xFF065F46) : const Color(0xFF1E40AF), fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 2),
+                        SizedBox(height: 2),
                         Text(livraisonCA >= targetCA
                             ? 'Tu as gagné ${_formatCurrency(livraisonCA)} de Uber (cible : ${_formatCurrency(targetCA)})'
                             : 'Reste ${_formatCurrency(remainingForGoal)} à gagner (${_formatCurrency(livraisonCA)} / ${_formatCurrency(targetCA)})', style: TextStyle(fontSize: 12, color: livraisonCA >= targetCA ? const Color(0xFF047857) : const Color(0xFF1E3A8A))),
@@ -1978,28 +2118,28 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
           if (unpaidBills > 0) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFDE68A), width: 1)),
               child: Row(
                 children: [
-                  const Icon(Icons.receipt_long, size: 16, color: Color(0xFFD97706)),
-                  const SizedBox(width: 8),
-                  const Text('Factures en attente :', style: TextStyle(fontSize: 12, color: Color(0xFF92400E), fontWeight: FontWeight.w600)),
-                  const Spacer(),
+                  Icon(Icons.receipt_long, size: 16, color: Color(0xFFD97706)),
+                  SizedBox(width: 8),
+                  Text('Factures en attente :', style: TextStyle(fontSize: 12, color: Color(0xFF92400E), fontWeight: FontWeight.w600)),
+                  Spacer(),
                   Text(_formatCurrency(remainingBills), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFB45309))),
                 ],
               ),
             ),
           ],
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           _buildBillsSection(),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           _progressBar(calc),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           _buildSavingsPotential(),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           _buildTips(calc),
           _buildChartsSection(),
         ],
@@ -2050,9 +2190,9 @@ class _HomePageState extends State<HomePage> {
         children: [
           Row(
             children: [
-              const Text('🌿', style: TextStyle(fontSize: 24)),
-              const SizedBox(width: 12),
-              const Expanded(
+              Text('🌿', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 12),
+              Expanded(
                 child: Text('Économies possibles', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF065F46)), overflow: TextOverflow.ellipsis),
               ),
               Container(
@@ -2062,17 +2202,17 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          const Text('En supprimant ces dépenses, vous pourriez économiser :', style: TextStyle(fontSize: 12, color: Color(0xFF047857))),
-          const SizedBox(height: 12),
+          SizedBox(height: 8),
+          Text('En supprimant ces dépenses, vous pourriez économiser :', style: TextStyle(fontSize: 12, color: Color(0xFF047857))),
+          SizedBox(height: 12),
           ...sorted.map((e) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               children: [
                 Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle)),
-                const SizedBox(width: 10),
+                SizedBox(width: 10),
                 Expanded(child: Text(e.label, style: const TextStyle(fontSize: 13, color: Color(0xFF064E3B)), overflow: TextOverflow.ellipsis)),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Text(_formatCurrency(e.amount), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF065F46))),
               ],
             ),
@@ -2118,21 +2258,21 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Text('💡', style: TextStyle(fontSize: 18)),
               SizedBox(width: 8),
               Text('Conseils', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF92400E))),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           ...tips.take(3).map((t) => Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(t['icon']!, style: const TextStyle(fontSize: 14)),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Expanded(child: Text(t['text']!, style: const TextStyle(fontSize: 13, color: Color(0xFF78350F)), overflow: TextOverflow.ellipsis, maxLines: 2)),
               ],
             ),
@@ -2192,26 +2332,26 @@ class _HomePageState extends State<HomePage> {
       margin: const EdgeInsets.only(top: 16),
       padding: EdgeInsets.all(compact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.cardBackground,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: context.shadowColor, blurRadius: 12, offset: Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Text('📊', style: TextStyle(fontSize: 20)),
               SizedBox(width: 8),
               Flexible(
-                child: Text('Graphiques du mois', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2937)), overflow: TextOverflow.ellipsis),
+                child: Text('Graphiques du mois', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: context.textPrimary), overflow: TextOverflow.ellipsis),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           if (hasLineData) ...[
-            const Text('Évolution cumulée', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF374151))),
-            const SizedBox(height: 12),
+            Text('Évolution cumulée', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: context.textSecondary)),
+            SizedBox(height: 12),
             SizedBox(
               height: 180,
               child: LineChart(
@@ -2223,7 +2363,7 @@ class _HomePageState extends State<HomePage> {
                     topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 22, interval: 5, getTitlesWidget: (v, m) {
                       if (v == 1 || v == daysInMonth.toDouble() || v % 10 == 0) {
-                        return Padding(padding: const EdgeInsets.only(top: 4), child: Text(v.toInt().toString(), style: const TextStyle(fontSize: 9, color: Color(0xFF6B7280))));
+                        return Padding(padding: EdgeInsets.only(top: 4), child: Text(v.toInt().toString(), style: TextStyle(fontSize: 9, color: context.textSecondary)));
                       }
                       return const SizedBox.shrink();
                     })),
@@ -2251,54 +2391,46 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Row(
               children: [
                 _legendDot(const Color(0xFF10B981), 'Revenus'),
-                const SizedBox(width: 16),
+                SizedBox(width: 16),
                 _legendDot(const Color(0xFFEF4444), 'Dépenses'),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
           ],
           if (hasPieData) ...[
-            const Text('Répartition', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF374151))),
+            Text('Répartition', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: context.textSecondary)),
             const SizedBox(height: 12),
-            SizedBox(
-              height: 180,
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: PieChart(
-                      PieChartData(
-                        sectionsSpace: 2,
-                        centerSpaceRadius: 32,
-                        sections: [
-                          if (uberTotal > 0) PieChartSectionData(value: uberTotal, color: const Color(0xFF10B981), radius: 50, title: '', showTitle: false),
-                          if (aidesTotal > 0) PieChartSectionData(value: aidesTotal, color: const Color(0xFF3B82F6), radius: 50, title: '', showTitle: false),
-                          if (billsTotal > 0) PieChartSectionData(value: billsTotal, color: const Color(0xFFF59E0B), radius: 50, title: '', showTitle: false),
-                          if (otherExpTotal > 0) PieChartSectionData(value: otherExpTotal, color: const Color(0xFFEF4444), radius: 50, title: '', showTitle: false),
-                        ],
-                      ),
-                    ),
+            Center(
+              child: SizedBox(
+                height: 110,
+                width: 110,
+                child: PieChart(
+                  PieChartData(
+                    sectionsSpace: 2,
+                    centerSpaceRadius: 20,
+                    sections: [
+                      if (uberTotal > 0) PieChartSectionData(value: uberTotal, color: const Color(0xFF10B981), radius: 32, title: '', showTitle: false),
+                      if (aidesTotal > 0) PieChartSectionData(value: aidesTotal, color: const Color(0xFF3B82F6), radius: 32, title: '', showTitle: false),
+                      if (billsTotal > 0) PieChartSectionData(value: billsTotal, color: const Color(0xFFF59E0B), radius: 32, title: '', showTitle: false),
+                      if (otherExpTotal > 0) PieChartSectionData(value: otherExpTotal, color: const Color(0xFFEF4444), radius: 32, title: '', showTitle: false),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 5,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (uberTotal > 0) _legendRow('🚚 Uber', uberTotal, const Color(0xFF10B981)),
-                        if (aidesTotal > 0) _legendRow('💵 Aides', aidesTotal, const Color(0xFF3B82F6)),
-                        if (billsTotal > 0) _legendRow('📋 Factures', billsTotal, const Color(0xFFF59E0B)),
-                        if (otherExpTotal > 0) _legendRow('💸 Autres dépenses', otherExpTotal, const Color(0xFFEF4444)),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
+            ),
+            const SizedBox(height: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (uberTotal > 0) _legendRow('🚚 Uber', uberTotal, const Color(0xFF10B981)),
+                if (aidesTotal > 0) _legendRow('💵 Aides', aidesTotal, const Color(0xFF3B82F6)),
+                if (billsTotal > 0) _legendRow('📋 Factures', billsTotal, const Color(0xFFF59E0B)),
+                if (otherExpTotal > 0) _legendRow('💸 Autres', otherExpTotal, const Color(0xFFEF4444)),
+              ],
             ),
           ],
         ],
@@ -2311,8 +2443,8 @@ class _HomePageState extends State<HomePage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF374151))),
+        SizedBox(width: 6),
+        Text(label, style: TextStyle(fontSize: 12, color: context.textSecondary)),
       ],
     );
   }
@@ -2323,9 +2455,9 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         children: [
           Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 6),
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF374151)), overflow: TextOverflow.ellipsis)),
-          Text(_formatCurrency(value), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+          SizedBox(width: 6),
+          Expanded(child: Text(label, style: TextStyle(fontSize: 11, color: context.textSecondary), overflow: TextOverflow.ellipsis)),
+          Text(_formatCurrency(value), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: context.textPrimary)),
         ],
       ),
     );
@@ -2337,21 +2469,21 @@ class _HomePageState extends State<HomePage> {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF9FAFB),
+          color: context.surfaceVariant,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+          border: Border.all(color: context.borderColor, width: 1),
         ),
         child: Row(
-          children: const [
-            Text('📋', style: TextStyle(fontSize: 22)),
-            SizedBox(width: 12),
+          children: [
+            const Text('📋', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Aucune facture', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF374151))),
+                  Text('Aucune facture', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: context.textSecondary)),
                   SizedBox(height: 2),
-                  Text('Cochez "C\'est une facture" à l\'ajout d\'une dépense', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                  Text('Cochez "C\'est une facture" à l\'ajout d\'une dépense', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 ],
               ),
             ),
@@ -2371,9 +2503,9 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.cardBackground,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        border: Border.all(color: context.borderColor, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2385,47 +2517,47 @@ class _HomePageState extends State<HomePage> {
                 decoration: BoxDecoration(color: accentColor.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
                 child: Text(allPaid ? '✓' : '📋', style: TextStyle(fontSize: 18, color: accentColor)),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(allPaid ? 'Factures payées' : 'Factures à payer', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2937))),
-                    const SizedBox(height: 2),
-                    Text('${paidBills.length}/${bills.length} payée(s)', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                    Text(allPaid ? 'Factures payées' : 'Factures à payer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: context.textPrimary)),
+                    SizedBox(height: 2),
+                    Text('${paidBills.length}/${bills.length} payée(s)', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                   ],
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(_formatCurrency(paidAmount), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
-                  Text('sur ${_formatCurrency(totalBills)}', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                  Text(_formatCurrency(paidAmount), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: context.textPrimary)),
+                  Text('sur ${_formatCurrency(totalBills)}', style: TextStyle(fontSize: 11, color: context.textSecondary)),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(value: progress, backgroundColor: const Color(0xFFF3F4F6), valueColor: AlwaysStoppedAnimation<Color>(accentColor), minHeight: 8),
+            child: LinearProgressIndicator(value: progress, backgroundColor: context.dividerColor, valueColor: AlwaysStoppedAnimation<Color>(accentColor), minHeight: 8),
           ),
           if (!allPaid) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text('Reste à payer : ${_formatCurrency(remaining)}', style: const TextStyle(fontSize: 12, color: Color(0xFFD97706), fontWeight: FontWeight.w600)),
           ],
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           ...unpaidBills.map((b) => _billTile(b)),
           if (unpaidBills.isNotEmpty && paidBills.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Row(
+            SizedBox(height: 14),
+            Row(
               children: [
                 Text('✓', style: TextStyle(color: Color(0xFF10B981), fontSize: 14, fontWeight: FontWeight.w700)),
                 SizedBox(width: 6),
                 Text('Payées', style: TextStyle(fontSize: 12, color: Color(0xFF10B981), fontWeight: FontWeight.w700)),
               ],
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
           ],
           ...paidBills.map((b) => _billTile(b)),
         ],
@@ -2475,9 +2607,9 @@ class _HomePageState extends State<HomePage> {
           margin: const EdgeInsets.symmetric(vertical: 3),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           decoration: BoxDecoration(
-            color: bill.billPaid ? const Color(0xFFF0FDF4) : const Color(0xFFFAFAFA),
+            color: bill.billPaid ? Color(0xFFF0FDF4) : context.surfaceVariant,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: bill.billPaid ? const Color(0xFFBBF7D0) : const Color(0xFFE5E7EB), width: 1),
+            border: Border.all(color: bill.billPaid ? Color(0xFFBBF7D0) : context.borderColor, width: 1),
           ),
           child: Row(
             children: [
@@ -2491,7 +2623,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 child: bill.billPaid ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2505,13 +2637,13 @@ class _HomePageState extends State<HomePage> {
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                               decoration: bill.billPaid ? TextDecoration.lineThrough : null,
-                              color: bill.billPaid ? const Color(0xFF9CA3AF) : const Color(0xFF1F2937),
+                              color: bill.billPaid ? context.textSecondary : context.textPrimary,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (bill.billRecurring) ...[
-                          const SizedBox(width: 6),
+                          SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(8)),
@@ -2523,13 +2655,13 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Text(
                 _formatCurrency(bill.amount),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: bill.billPaid ? const Color(0xFF9CA3AF) : const Color(0xFF1F2937),
+                  color: bill.billPaid ? context.textSecondary : context.textPrimary,
                   decoration: bill.billPaid ? TextDecoration.lineThrough : null,
                 ),
               ),
@@ -2550,9 +2682,9 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: EdgeInsets.all(compact ? 16 : 22),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: isPrimary ? [Colors.white, bgColor] : [Colors.white, const Color(0xFFFAFBFC)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: LinearGradient(colors: isPrimary ? [context.cardBackground, bgColor] : [context.cardBackground, context.surfaceVariant], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: isPrimary ? color.withOpacity(0.3) : const Color(0xFFE5E7EB), width: isPrimary ? 1.5 : 1),
+        border: Border.all(color: isPrimary ? color.withOpacity(0.3) : context.borderColor, width: isPrimary ? 1.5 : 1),
         boxShadow: [BoxShadow(color: color.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 2))],
       ),
       child: Column(
@@ -2562,19 +2694,19 @@ class _HomePageState extends State<HomePage> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: isPrimary ? color.withOpacity(0.15) : const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: isPrimary ? color.withOpacity(0.15) : context.dividerColor, borderRadius: BorderRadius.circular(10)),
                 child: Text(isPrimary ? (isPositive ? '✓' : '⚠️') : '💰', style: TextStyle(fontSize: 18, color: isPrimary ? color : null)),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
-                child: Text(label, style: TextStyle(fontSize: 13, color: isPrimary ? color : const Color(0xFF6B7280), fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+                child: Text(label, style: TextStyle(fontSize: 13, color: isPrimary ? color : context.textSecondary, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           Text(_formatCurrency(value), style: TextStyle(fontSize: isPrimary ? 32 : 26, fontWeight: FontWeight.w800, color: color, letterSpacing: -0.5)),
-          const SizedBox(height: 4),
-          Text(detail, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)), softWrap: true),
+          SizedBox(height: 4),
+          Text(detail, style: TextStyle(fontSize: 12, color: context.textSecondary), softWrap: true),
         ],
       ),
     );
@@ -2589,9 +2721,9 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.cardBackground,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        border: Border.all(color: context.borderColor, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2603,32 +2735,32 @@ class _HomePageState extends State<HomePage> {
                 decoration: BoxDecoration(color: const Color(0xFF1A73E8).withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
                 child: const Text('🎯', style: TextStyle(fontSize: 18)),
               ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text('Progression livraison', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2937)), overflow: TextOverflow.ellipsis),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text('Progression livraison', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: context.textPrimary), overflow: TextOverflow.ellipsis),
               ),
               Text('${percent.round()}%', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1A73E8))),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(value: progress, backgroundColor: const Color(0xFFF3F4F6), valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF1A73E8)), minHeight: 10),
+            child: LinearProgressIndicator(value: progress, backgroundColor: context.dividerColor, valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A73E8)), minHeight: 10),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_formatCurrency(livraisonCA), style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
-              Text('Objectif ${_formatCurrency(targetCA)}', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+              Text(_formatCurrency(livraisonCA), style: TextStyle(fontSize: 12, color: context.textSecondary, fontWeight: FontWeight.w600)),
+              Text('Objectif ${_formatCurrency(targetCA)}', style: TextStyle(fontSize: 12, color: context.textSecondary)),
             ],
           ),
           if (otherIncome > 0) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
-              child: Text('+ ${_formatCurrency(otherIncome)} autres revenus (hors progression)', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)), softWrap: true, textAlign: TextAlign.center),
+              decoration: BoxDecoration(color: context.dividerColor, borderRadius: BorderRadius.circular(8)),
+              child: Text('+ ${_formatCurrency(otherIncome)} autres revenus (hors progression)', style: TextStyle(fontSize: 11, color: context.textSecondary), softWrap: true, textAlign: TextAlign.center),
             ),
           ],
         ],
@@ -2656,14 +2788,14 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('💡 Économies possibles', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green)),
-                  const SizedBox(height: 8),
+                  Text('💡 Économies possibles', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green)),
+                  SizedBox(height: 8),
                   ...nonEssential.take(5).map((e) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
-                        const Text('✂️'),
-                        const SizedBox(width: 8),
+                        Text('✂️'),
+                        SizedBox(width: 8),
                         Expanded(child: Text('${e.label} (${_formatCurrency(e.amount)})', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
                         IconButton(icon: const Icon(Icons.close, color: Colors.red, size: 20), onPressed: () => _deleteEntry(e.id)),
                       ],
@@ -2673,19 +2805,19 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           if (entries.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(32),
               child: Column(
-                children: [Text('📝', style: TextStyle(fontSize: 48)), SizedBox(height: 8), Text('Aucune opération', style: TextStyle(color: Color(0xFF5F6368)))],
+                children: [Text('📝', style: TextStyle(fontSize: 48)), SizedBox(height: 8), Text('Aucune opération', style: TextStyle(color: context.textSecondary))],
               ),
             )
           else ...[
             Container(
               constraints: const BoxConstraints(maxHeight: 420),
               decoration: BoxDecoration(
-                color: const Color(0xFFFAFBFC),
+                color: context.surfaceVariant,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                border: Border.all(color: context.borderColor, width: 1),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -2717,7 +2849,7 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: entry.isCarryOver ? const Color(0xFFF0FDF4) : Colors.white,
+        color: entry.isCarryOver ? Color(0xFFF0FDF4) : context.cardBackground,
         borderRadius: BorderRadius.circular(8),
         border: Border(
           left: BorderSide(
@@ -2733,7 +2865,7 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         children: [
           Text(entry.isCarryOver ? '🔄' : (entry.type == 'income' ? (entry.source == 'autre' ? '💵' : '💰') : (entry.isBill ? '📋' : '💸')), style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2747,16 +2879,16 @@ class _HomePageState extends State<HomePage> {
                 ),
                 Text(
                   _formatDate(entry.date),
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF)),
+                  style: TextStyle(fontSize: 10, color: context.textSecondary),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: 6),
           Text('${entry.type == 'income' ? '+' : '-'}${_formatCurrency(entry.amount)}', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: entry.type == 'income' ? const Color(0xFF10B981) : const Color(0xFFEF4444))),
           if (!entry.isCarryOver) ...[
             InkWell(onTap: () => _showEditDialog(entry), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, color: Color(0xFF1A73E8), size: 16))),
-            InkWell(onTap: () => _deleteEntry(entry.id), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, color: Color(0xFF9CA3AF), size: 16))),
+            InkWell(onTap: () => _deleteEntry(entry.id), child: Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, color: context.textSecondary, size: 16))),
           ],
         ],
       ),
@@ -2769,9 +2901,9 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: EdgeInsets.all(compact ? 14 : 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.cardBackground,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: context.shadowColor, blurRadius: 12, offset: Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2780,22 +2912,22 @@ class _HomePageState extends State<HomePage> {
             children: [
               if (accentColor != null) ...[
                 Container(width: 4, height: 28, decoration: BoxDecoration(color: accentColor, borderRadius: BorderRadius.circular(2))),
-                const SizedBox(width: 10),
+                SizedBox(width: 10),
               ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: TextStyle(fontSize: compact ? 14 : 16, fontWeight: FontWeight.w700, color: const Color(0xFF1F2937)), overflow: TextOverflow.ellipsis, softWrap: true),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: TextStyle(fontSize: compact ? 11 : 12, color: const Color(0xFF6B7280)), overflow: TextOverflow.ellipsis, softWrap: true),
+                    Text(title, style: TextStyle(fontSize: compact ? 14 : 16, fontWeight: FontWeight.w700, color: context.textPrimary), overflow: TextOverflow.ellipsis, softWrap: true),
+                    SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(fontSize: compact ? 11 : 12, color: context.textSecondary), overflow: TextOverflow.ellipsis, softWrap: true),
                   ],
                 ),
               ),
               if (action != null) action,
             ],
           ),
-          const SizedBox(height: 18),
+          SizedBox(height: 18),
           child,
         ],
       ),
@@ -2815,7 +2947,7 @@ class _HomePageState extends State<HomePage> {
               height: 24,
               child: Checkbox(value: value, onChanged: (v) => onChanged(v ?? false), materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(
               child: Text(label, style: const TextStyle(fontSize: 13), softWrap: true),
             ),
@@ -2829,8 +2961,8 @@ class _HomePageState extends State<HomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF5F6368))),
-        const SizedBox(height: 8),
+        Text(label, style: TextStyle(fontSize: 12, color: context.textSecondary)),
+        SizedBox(height: 8),
         TextFormField(
           initialValue: value > 0 ? (value == value.roundToDouble() ? value.toInt().toString() : value.toString()) : '',
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -2839,6 +2971,89 @@ class _HomePageState extends State<HomePage> {
           onChanged: (v) => onChanged(double.tryParse(v) ?? 0),
         ),
       ],
+    );
+  }
+}
+
+class _SettingsDialog extends StatefulWidget {
+  final ThemeMode currentThemeMode;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
+  const _SettingsDialog({required this.currentThemeMode, this.onThemeModeChanged});
+
+  @override
+  State<_SettingsDialog> createState() => _SettingsDialogState();
+}
+
+class _SettingsDialogState extends State<_SettingsDialog> {
+  late ThemeMode _mode = widget.currentThemeMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(
+        children: [
+          Icon(Icons.settings_outlined, color: AppColors.brand),
+          SizedBox(width: 8),
+          Text('Réglages'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Apparence', style: TextStyle(fontWeight: FontWeight.w600)),
+          SizedBox(height: 8),
+          _themeOption(ThemeMode.system, Icons.brightness_auto, 'Système', 'Suit les réglages de ton téléphone'),
+          _themeOption(ThemeMode.light, Icons.light_mode, 'Clair', 'Toujours en mode clair'),
+          _themeOption(ThemeMode.dark, Icons.dark_mode, 'Sombre', 'Toujours en mode sombre'),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fermer')),
+      ],
+    );
+  }
+
+  Widget _themeOption(ThemeMode mode, IconData icon, String title, String subtitle) {
+    final selected = _mode == mode;
+    return InkWell(
+      onTap: () {
+        setState(() => _mode = mode);
+        widget.onThemeModeChanged?.call(mode);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(mode == ThemeMode.system ? '🌗 Suit le système' : mode == ThemeMode.dark ? '🌙 Mode sombre activé' : '☀️ Mode clair activé'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.brandLight : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? AppColors.brand : context.borderColor, width: selected ? 2 : 1),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: selected ? AppColors.brand : context.textSecondary),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+                  Text(subtitle, style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                ],
+              ),
+            ),
+            if (selected) const Icon(Icons.check_circle, color: AppColors.brand, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }

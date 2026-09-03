@@ -1,0 +1,16 @@
+#
+# Modèle de configuration de signature pour les builds release.
+# Copier ce fichier vers android/key.properties et remplir les valeurs réelles.
+# NE JAMAIS COMMITER le vrai key.properties ni le keystore (.jks).
+#
+# Génération du keystore :
+#   keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA \
+#     -keysize 2048 -validity 10000 -alias upload
+#
+# Le fichier key.properties et le .jks doivent être ajoutés à .gitignore.
+#
+
+storePassword=<mot_de_passe_du_keystore>
+keyPassword=<mot_de_passe_de_la_clé>
+keyAlias=upload
+storeFile=<chemin_absolu_vers_upload-keystore.jks>

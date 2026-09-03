@@ -1,13 +1,14 @@
 {
-    "name": "budget_livreur",
-    "short_name": "budget_livreur",
+    "name": "Carnet Livreur",
+    "short_name": "Carnet",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1A73E8",
+    "theme_color": "#1A73E8",
+    "description": "Carnet intelligent pour livreurs Uber Eats et Deliveroo - suivez vos revenus, charges, URSSAF et objectifs mensuels.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "lang": "fr",
     "icons": [
         {
             "src": "icons/Icon-192.png",
