@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1820,6 +1821,7 @@ class _HomePageState extends State<HomePage> {
           _buildSavingsPotential(),
           const SizedBox(height: 14),
           _buildTips(calc),
+          _buildChartsSection(),
         ],
       ),
     );
@@ -1955,6 +1957,195 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartsSection() {
+    final entries = _currentMonthData.entries;
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    final now = DateTime.now();
+    final firstDay = DateTime(now.year, now.month, 1);
+    final lastDay = DateTime(now.year, now.month + 1, 0);
+    final daysInMonth = lastDay.day;
+
+    final dailyCA = List<double>.filled(daysInMonth, 0);
+    final dailyExpenses = List<double>.filled(daysInMonth, 0);
+    for (final e in entries) {
+      if (e.date.year == now.year && e.date.month == now.month) {
+        final day = e.date.day - 1;
+        if (e.type == 'income') {
+          dailyCA[day] += e.amount;
+        } else {
+          dailyExpenses[day] += e.amount;
+        }
+      }
+    }
+
+    double cumCA = 0;
+    double cumExp = 0;
+    final cumCASpots = <FlSpot>[];
+    final cumExpSpots = <FlSpot>[];
+    for (int i = 0; i < daysInMonth; i++) {
+      cumCA += dailyCA[i];
+      cumExp += dailyExpenses[i];
+      cumCASpots.add(FlSpot((i + 1).toDouble(), cumCA));
+      cumExpSpots.add(FlSpot((i + 1).toDouble(), cumExp));
+    }
+
+    final uberTotal = entries.where((e) => e.type == 'income' && e.source != 'autre').fold<double>(0, (s, e) => s + e.amount);
+    final aidesTotal = entries.where((e) => e.type == 'income' && e.source == 'autre').fold<double>(0, (s, e) => s + e.amount);
+    final billsTotal = entries.where((e) => e.type == 'expense' && e.isBill).fold<double>(0, (s, e) => s + e.amount);
+    final otherExpTotal = entries.where((e) => e.type == 'expense' && !e.isBill).fold<double>(0, (s, e) => s + e.amount);
+
+    final hasPieData = uberTotal + aidesTotal + billsTotal + otherExpTotal > 0;
+    final hasLineData = entries.any((e) => e.type == 'income' || e.type == 'expense');
+
+    if (!hasPieData && !hasLineData) return const SizedBox.shrink();
+
+    final width = MediaQuery.of(context).size.width;
+    final compact = width < 360;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: EdgeInsets.all(compact ? 14 : 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Text('📊', style: TextStyle(fontSize: 20)),
+              SizedBox(width: 8),
+              Flexible(
+                child: Text('Graphiques du mois', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2937)), overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (hasLineData) ...[
+            const Text('Évolution cumulée', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF374151))),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 180,
+              child: LineChart(
+                LineChartData(
+                  gridData: const FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100),
+                  titlesData: FlTitlesData(
+                    leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(v.toInt().toString(), style: const TextStyle(fontSize: 9)))),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 22, interval: 5, getTitlesWidget: (v, m) {
+                      if (v == 1 || v == daysInMonth.toDouble() || v % 10 == 0) {
+                        return Padding(padding: const EdgeInsets.only(top: 4), child: Text(v.toInt().toString(), style: const TextStyle(fontSize: 9, color: Color(0xFF6B7280))));
+                      }
+                      return const SizedBox.shrink();
+                    })),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  minX: 1, maxX: daysInMonth.toDouble(), minY: 0,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: cumCASpots,
+                      isCurved: true,
+                      color: const Color(0xFF10B981),
+                      barWidth: 2.5,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(show: true, color: const Color(0xFF10B981).withOpacity(0.15)),
+                    ),
+                    LineChartBarData(
+                      spots: cumExpSpots,
+                      isCurved: true,
+                      color: const Color(0xFFEF4444),
+                      barWidth: 2.5,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(show: true, color: const Color(0xFFEF4444).withOpacity(0.15)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _legendDot(const Color(0xFF10B981), 'Revenus'),
+                const SizedBox(width: 16),
+                _legendDot(const Color(0xFFEF4444), 'Dépenses'),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (hasPieData) ...[
+            const Text('Répartition', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF374151))),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 180,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 4,
+                    child: PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 32,
+                        sections: [
+                          if (uberTotal > 0) PieChartSectionData(value: uberTotal, color: const Color(0xFF10B981), radius: 50, title: '', showTitle: false),
+                          if (aidesTotal > 0) PieChartSectionData(value: aidesTotal, color: const Color(0xFF3B82F6), radius: 50, title: '', showTitle: false),
+                          if (billsTotal > 0) PieChartSectionData(value: billsTotal, color: const Color(0xFFF59E0B), radius: 50, title: '', showTitle: false),
+                          if (otherExpTotal > 0) PieChartSectionData(value: otherExpTotal, color: const Color(0xFFEF4444), radius: 50, title: '', showTitle: false),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (uberTotal > 0) _legendRow('🚚 Uber', uberTotal, const Color(0xFF10B981)),
+                        if (aidesTotal > 0) _legendRow('💵 Aides', aidesTotal, const Color(0xFF3B82F6)),
+                        if (billsTotal > 0) _legendRow('📋 Factures', billsTotal, const Color(0xFFF59E0B)),
+                        if (otherExpTotal > 0) _legendRow('💸 Autres dépenses', otherExpTotal, const Color(0xFFEF4444)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _legendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF374151))),
+      ],
+    );
+  }
+
+  Widget _legendRow(String label, double value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF374151)), overflow: TextOverflow.ellipsis)),
+          Text(_formatCurrency(value), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
         ],
       ),
     );
