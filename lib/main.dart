@@ -253,7 +253,6 @@ class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _sectionKeys = {
     'objectives': GlobalKey(),
-    'transfer': GlobalKey(),
     'result': GlobalKey(),
     'entries': GlobalKey(),
   };
@@ -1598,33 +1597,33 @@ class _HomePageState extends State<HomePage> {
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'help',
-                child: Row(children: [Icon(Icons.help_outline, size: 20), SizedBox(width: 12), Text('Aide')]),
+                child: Row(children: [Icon(Icons.help_outline, size: 20), const SizedBox(width: 12), Flexible(child: Text('Aide'))]),
               ),
               PopupMenuItem(
                 value: 'settings',
-                child: Row(children: [Icon(Icons.settings_outlined, size: 20), SizedBox(width: 12), Text('Réglages')]),
+                child: Row(children: [Icon(Icons.settings_outlined, size: 20), const SizedBox(width: 12), Flexible(child: Text('Réglages'))]),
               ),
               PopupMenuItem(
                 value: 'replay_onboarding',
-                child: Row(children: [Icon(Icons.replay_outlined, size: 20), SizedBox(width: 12), Text('Rejouer l\'introduction')]),
+                child: Row(children: [Icon(Icons.replay_outlined, size: 20), const SizedBox(width: 12), Flexible(child: Text('Rejouer l\'introduction'))]),
               ),
               PopupMenuItem(
                 value: 'about',
-                child: Row(children: [Icon(Icons.info_outline, size: 20), SizedBox(width: 12), Text('À propos')]),
+                child: Row(children: [Icon(Icons.info_outline, size: 20), const SizedBox(width: 12), Flexible(child: Text('À propos'))]),
               ),
-              PopupMenuDivider(),
+              const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'privacy',
-                child: Row(children: [Icon(Icons.privacy_tip_outlined, size: 20), SizedBox(width: 12), Text('Confidentialité')]),
+                child: Row(children: [Icon(Icons.privacy_tip_outlined, size: 20), const SizedBox(width: 12), Flexible(child: Text('Confidentialité'))]),
               ),
               PopupMenuItem(
                 value: 'terms',
-                child: Row(children: [Icon(Icons.description_outlined, size: 20), SizedBox(width: 12), Text('Mentions légales')]),
+                child: Row(children: [Icon(Icons.description_outlined, size: 20), const SizedBox(width: 12), Flexible(child: Text('Mentions légales'))]),
               ),
-              PopupMenuDivider(),
+              const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'reset',
-                child: Row(children: [Icon(Icons.delete_forever, size: 20, color: Theme.of(context).colorScheme.error), SizedBox(width: 12), Text('Réinitialiser les données', style: TextStyle(color: Theme.of(context).colorScheme.error))]),
+                child: Row(children: [Icon(Icons.delete_forever, size: 20, color: Theme.of(context).colorScheme.error), const SizedBox(width: 12), Flexible(child: Text('Réinitialiser les données', style: TextStyle(color: Theme.of(context).colorScheme.error)))]),
               ),
             ],
           ),
@@ -1843,7 +1842,6 @@ class _HomePageState extends State<HomePage> {
   Widget _buildQuickNav() {
     final tabs = [
       {'key': 'objectives', 'icon': '📌', 'label': 'Besoins'},
-      {'key': 'transfer', 'icon': '💳', 'label': 'Virement'},
       {'key': 'result', 'icon': '📊', 'label': 'Résultat'},
       {'key': 'entries', 'icon': '📋', 'label': 'Opérations'},
     ];
@@ -1946,11 +1944,6 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _inputField(label: '💰 Aides (APL, RSA...)', value: aides, onChanged: (v) { setState(() { _objectives['aides'] = v; }); }, suffix: '€/mois')),
-            ],
-          ),
           SizedBox(height: 16),
           SizedBox(
             width: double.infinity,

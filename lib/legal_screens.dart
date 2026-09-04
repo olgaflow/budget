@@ -207,6 +207,10 @@ class TermsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final warningBg = isDark ? const Color(0xFF78350F) : Colors.amber.shade50;
+    final warningBorder = isDark ? const Color(0xFFFCD34D) : Colors.amber.shade200;
+    final warningText = isDark ? Colors.amber.shade100 : Colors.black87;
     return LegalScreen(
       title: 'Mentions légales',
       body: Column(
@@ -234,17 +238,17 @@ class TermsScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.amber.shade50,
+              color: warningBg,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.amber.shade200),
+              border: Border.all(color: warningBorder),
             ),
-            child: const Text(
+            child: Text(
               '⚠️ Carnet Livreur est un outil d\'aide à la gestion personnelle. '
               'Il ne constitue pas un service de paiement, ne se connecte pas à votre banque, '
               'et ne remplace pas un cabinet comptable. '
               'Les calculs URSSAF sont fournis à titre indicatif et peuvent varier selon votre situation. '
               'Vérifiez toujours vos obligations fiscales auprès d\'un professionnel.',
-              style: TextStyle(fontSize: 13),
+              style: TextStyle(fontSize: 13, color: warningText),
             ),
           ),
           const SizedBox(height: 16),
