@@ -94,7 +94,44 @@ class _RootGateState extends State<_RootGate> {
       themeMode: _themeMode,
       home: _showOnboarding!
           ? OnboardingScreen(onComplete: _onOnboardingComplete)
-          : HomePage(onThemeModeChanged: _setThemeMode, currentThemeMode: _themeMode),
+          : Builder(
+              builder: (context) {
+                try {
+                  return HomePage(onThemeModeChanged: _setThemeMode, currentThemeMode: _themeMode);
+                } catch (e, stack) {
+                  return Scaffold(
+                    backgroundColor: AppColors.brand,
+                    body: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.white, size: 48),
+                            const SizedBox(height: 16),
+                            Text('Erreur au démarrage', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            Text('$e', style: TextStyle(color: Colors.white70, fontSize: 14), textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.clear();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Données effacées, redémarrez l\'appli')));
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.brand),
+                              child: const Text('Effacer les données'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
     );
   }
 }
@@ -197,18 +234,21 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   SharedPreferences? _prefs;
   final String _storageKey = 'budget-livreur-flutter-v1';
+  Timer? _saveDebounce;
+  Map<String, double>? _calcCache;
+  int _calcCacheStamp = -1;
+  String? _errorMessage;
 
   Map<String, double> _objectives = {
     'perso': 0,
     'fixes': 0,
     'epargne': 0,
-    'urssaf': 22,
+    'aides': 0,
   };
 
-  String _transferType = 'weekly';
   Map<String, MonthData> _months = {};
   String _currentMonthKey = '';
-  bool _isLoading = true;
+  bool _isLoading = false;
   bool _hasError = false;
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _sectionKeys = {
@@ -266,7 +306,6 @@ class _HomePageState extends State<HomePage> {
               (k, v) => MapEntry(k, (v as num).toDouble()),
             ),
           );
-          _transferType = data['transferType'] ?? 'weekly';
           _months = (data['months'] as Map<String, dynamic>? ?? {}).map(
             (k, v) => MapEntry(k, MonthData.fromJson(v)),
           );
@@ -281,6 +320,11 @@ class _HomePageState extends State<HomePage> {
       if (!_months.containsKey(_currentMonthKey)) {
         _months[_currentMonthKey] = MonthData();
       }
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
     } finally {
       setState(() {
         _isLoading = false;
@@ -291,7 +335,6 @@ class _HomePageState extends State<HomePage> {
   Future<void> _saveState() async {
     final data = {
       'objectives': _objectives,
-      'transferType': _transferType,
       'months': _months.map((k, v) => MapEntry(k, v.toJson())),
     };
     await _prefs?.setString(_storageKey, jsonEncode(data));
@@ -374,14 +417,13 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    final urssafRate = (_objectives['urssaf'] ?? 22) / 100;
+    final urssafRate = 0.22;
     final aides = _objectives['aides'] ?? 0.0;
     final netNeeds = (_objectives['perso'] ?? 0) + (_objectives['fixes'] ?? 0) + (_objectives['epargne'] ?? 0) - aides;
     final netNeedsPositive = netNeeds > 0 ? netNeeds : 0.0;
     final targetCA = urssafRate < 1 ? netNeedsPositive / (1 - urssafRate) : 0.0;
     final urssafToPay = taxableCA * urssafRate;
-    final transferFees = _transferType == 'instant' ? incomeDays.length * 0.99 : 0.0;
-    final netBalance = livraisonCA - urssafToPay - transferFees + otherIncome - paidExpenses;
+    final netBalance = livraisonCA - urssafToPay + otherIncome - paidExpenses;
     final netAfterBills = netBalance - unpaidBills;
 
     return {
@@ -391,12 +433,13 @@ class _HomePageState extends State<HomePage> {
       'paidExpenses': paidExpenses,
       'unpaidBills': unpaidBills,
       'urssafToPay': urssafToPay,
-      'transferFees': transferFees,
       'netBalance': netBalance,
       'netAfterBills': netAfterBills,
-      'netNeeds': netNeedsPositive,
-      'targetCA': targetCA,
       'carryOver': month.carryOver,
+      'targetCA': targetCA,
+      'netNeeds': netNeedsPositive,
+      'remainingCA': (targetCA - livraisonCA).clamp(0.0, double.infinity),
+      'possibleSavings': (netAfterBills - netNeedsPositive).clamp(0.0, double.infinity),
     };
   }
 
@@ -418,7 +461,6 @@ class _HomePageState extends State<HomePage> {
       'paidExpenses': calc['paidExpenses'] ?? 0.0,
       'unpaidBills': calc['unpaidBills'] ?? 0.0,
       'urssafToPay': calc['urssafToPay'] ?? 0.0,
-      'transferFees': calc['transferFees'] ?? 0.0,
       'netBalance': netBalance,
       'netAfterBills': netAfterBills,
       'carryOver': calc['carryOver'] ?? 0.0,
@@ -495,6 +537,36 @@ class _HomePageState extends State<HomePage> {
     return DateFormat('d MMM', 'fr_FR').format(date);
   }
 
+  Future<void> _confirmReset() async {
+    final confirmed = await _confirm('⚠️ Réinitialiser toutes les données ?\n\nCette action supprime :\n• Tous les objectifs\n• Toutes les opérations\n• Tous les mois\n\nCette action est irréversible.');
+    if (confirmed == true) {
+      await _resetAllData();
+    }
+  }
+
+  Future<void> _resetAllData() async {
+    _saveDebounce?.cancel();
+    _prefs?.clear();
+    setState(() {
+      _objectives = {
+        'perso': 0,
+        'fixes': 0,
+        'epargne': 0,
+        'aides': 0,
+      };
+      _months = {};
+      _currentMonthKey = _getCurrentMonthKey();
+      _months[_currentMonthKey] = MonthData();
+      _calcCache = null;
+      _errorMessage = null;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Données réinitialisées'), backgroundColor: Colors.green),
+      );
+    }
+  }
+
   void _showSummaryDialog() {
     showDialog(
       context: context,
@@ -558,10 +630,8 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         Divider(),
-        _summaryRow('🏛️ URSSAF', null, calc['urssafToPay']!, Colors.orange),
-        _summaryRow('💸 Frais virements', null, calc['transferFees']!, Colors.orange),
-        Divider(),
         _summaryRow('💼 Solde net', null, calc['netBalance']!, calc['netBalance']! >= 0 ? Colors.green : Colors.red),
+        _summaryRow('🏛️ URSSAF à payer', null, calc['urssafToPay']!, Colors.orange),
         if (calc['carryOver']! > 0)
           _summaryRow('🔄 Report mois suivant', null, calc['carryOver']!, Colors.blue),
         SizedBox(height: 12),
@@ -653,7 +723,6 @@ class _HomePageState extends State<HomePage> {
         'urssaf': 22,
         'aides': 200,
       };
-      _transferType = 'weekly';
       _months = {
         monthKey: MonthData(
           entries: [
@@ -728,7 +797,6 @@ class _HomePageState extends State<HomePage> {
         }));
     final data = {
       'objectives': _objectives,
-      'transferType': _transferType,
       'currentMonthKey': _currentMonthKey,
       'months': monthsData,
     };
@@ -1394,7 +1462,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Impossible de charger les données. Réessayez ou réinstallez l\'application.',
+                  _errorMessage ?? 'Impossible de charger les données. Réessayez ou réinstallez l\'application.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: context.textSecondary),
                 ),
@@ -1404,6 +1472,7 @@ class _HomePageState extends State<HomePage> {
                     setState(() {
                       _isLoading = true;
                       _hasError = false;
+                      _errorMessage = null;
                     });
                     _initPrefs();
                   },
@@ -1512,6 +1581,9 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const TermsScreen()),
                   );
                   break;
+                case 'reset':
+                  _confirmReset();
+                  break;
                 case 'replay_onboarding':
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setBool(kPrefsOnboardingCompleted, false);
@@ -1523,7 +1595,7 @@ class _HomePageState extends State<HomePage> {
                   break;
               }
             },
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'help',
                 child: Row(children: [Icon(Icons.help_outline, size: 20), SizedBox(width: 12), Text('Aide')]),
@@ -1548,6 +1620,11 @@ class _HomePageState extends State<HomePage> {
               PopupMenuItem(
                 value: 'terms',
                 child: Row(children: [Icon(Icons.description_outlined, size: 20), SizedBox(width: 12), Text('Mentions légales')]),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'reset',
+                child: Row(children: [Icon(Icons.delete_forever, size: 20, color: Theme.of(context).colorScheme.error), SizedBox(width: 12), Text('Réinitialiser les données', style: TextStyle(color: Theme.of(context).colorScheme.error))]),
               ),
             ],
           ),
@@ -1601,8 +1678,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   SizedBox(height: 20),
                   Container(key: _sectionKeys['objectives'], child: _buildObjectivesSection(calc)),
-                  SizedBox(height: 16),
-                  Container(key: _sectionKeys['transfer'], child: _buildTransferSection()),
                   SizedBox(height: 16),
                   _buildActionSection(calc),
                   SizedBox(height: 16),
@@ -1867,7 +1942,7 @@ class _HomePageState extends State<HomePage> {
             children: [
               Expanded(child: _inputField(label: '🐷 Épargne', value: _objectives['epargne']!, onChanged: (v) { setState(() { _objectives['epargne'] = v; }); }, suffix: '€/mois')),
               SizedBox(width: 12),
-              Expanded(child: _inputField(label: '🏛️ URSSAF', value: _objectives['urssaf']!, onChanged: (v) { setState(() { _objectives['urssaf'] = v; }); }, suffix: '%')),
+              Expanded(child: _inputField(label: '💰 Aides (APL, RSA...)', value: _objectives['aides']!, onChanged: (v) { setState(() { _objectives['aides'] = v; }); }, suffix: '€/mois')),
             ],
           ),
           SizedBox(height: 12),
@@ -1951,45 +2026,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildTransferSection() {
-    return _section(
-      title: '🏦 Type de virement',
-      subtitle: 'Comment recevez-vous votre argent ?',
-      child: Column(
-        children: [
-          _transferOption(value: 'weekly', icon: '📅', title: 'Hebdomadaire', subtitle: 'Gratuit', badge: 'GRATUIT', badgeColor: Colors.green),
-          SizedBox(height: 8),
-          _transferOption(value: 'instant', icon: '⚡', title: 'Instantané', subtitle: '0.99€ par virement', badge: '-0.99€', badgeColor: Colors.red),
-        ],
-      ),
-    );
-  }
-
-  Widget _transferOption({required String value, required String icon, required String title, required String subtitle, required String badge, required Color badgeColor}) {
-    final isSelected = _transferType == value;
-    return GestureDetector(
-      onTap: () { setState(() => _transferType = value); _saveState(); },
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? Color(0xFFE8F0FE) : context.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isSelected ? Color(0xFF1A73E8) : context.borderColor, width: 2),
-        ),
-        child: Row(
-          children: [Text(icon, style: const TextStyle(fontSize: 24)), const SizedBox(width: 12), Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600)), Text(subtitle, style: TextStyle(fontSize: 12, color: context.textSecondary))],
-          )), Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: badgeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-            child: Text(badge, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: badgeColor)),
-          )],
-        ),
-      ),
-    );
-  }
-
   Widget _buildActionSection(Map<String, double> calc) {
     return _section(
       title: '✏️ Étape 2 : Saisie',
@@ -2012,7 +2048,6 @@ class _HomePageState extends State<HomePage> {
               children: [
                 _quickStat('CA', calc['totalCA']!, const Color(0xFF1A73E8)),
                 _quickStat('Total sorties', (calc['paidExpenses'] ?? 0) + (calc['unpaidBills'] ?? 0), Colors.red),
-                _quickStat('Frais virem.', calc['transferFees']!, Colors.orange),
               ],
             ),
           ),
@@ -2228,7 +2263,6 @@ class _HomePageState extends State<HomePage> {
     final netBalance = calc['netBalance'] ?? 0;
     final livraisonCA = calc['livraisonCA'] ?? 0;
     final targetCA = calc['targetCA'] ?? 0;
-    final transferFees = calc['transferFees'] ?? 0;
 
     if (livraisonCA >= targetCA && targetCA > 0) {
       tips.add({'icon': '🎉', 'text': 'Bravo ! Vous avez atteint votre objectif !'});
@@ -2238,9 +2272,6 @@ class _HomePageState extends State<HomePage> {
     }
     if (nonEssentialTotal > 0) {
       tips.add({'icon': '✂️', 'text': 'Économisez ${_formatCurrency(nonEssentialTotal)} en supprimant le non essentiel'});
-    }
-    if (_transferType == 'instant' && transferFees > 5) {
-      tips.add({'icon': '💸', 'text': 'Virement hebdo économiserait ${_formatCurrency(transferFees)} ce mois'});
     }
     if (netBalance < 0) {
       tips.add({'icon': '⚠️', 'text': 'Il vous manque ${_formatCurrency(-netBalance)} pour être à l\'équilibre'});
